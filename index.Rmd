@@ -1,0 +1,155 @@
+---
+title: 'Practical Machine Learning : Course Project'
+author: "Deepjyoti Chakraborty"
+date: "11/9/2020"
+output: html_document
+---
+# Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+We will use different modelling techniques to achieve the objective of predicting the manner in which they did the exercise which is given by the "classe" variable in the training data set. We will select the best model based on performance on testing data set created out of partitioning the training data set given in the project into training and testing data set. The testing data set given in the assignment is used as validation data set.
+
+## Loading required libraries
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+```
+
+## Downloading the files from the URLs given in the assignment
+
+```{r}
+download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', destfile = './pml-training.csv')
+download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', destfile = './pml-testing.csv')
+```
+
+## Loading dataset
+
+```{r}
+train_dataset <- read.csv('./pml-training.csv', header=T)
+valid_dataset <- read.csv('./pml-testing.csv', header=T)
+dim(train_dataset)
+dim(valid_dataset)
+```
+
+
+## Checking variables in train_dataset
+
+```{r}
+head(train_dataset)
+```
+
+## Removing variables with NA values
+
+```{r}
+training<- train_dataset[, colSums(is.na(train_dataset)) == 0]
+validation <- valid_dataset[, colSums(is.na(valid_dataset)) == 0]
+dim(training)
+
+dim(validation)
+```
+
+## Removing first 7 variables as they are not relevant
+
+```{r}
+training <- training[, -c(1:7)]
+validation <- validation[, -c(1:7)]
+dim(training)
+dim(validation)
+```
+
+
+## Creating two data sets from training data set - training and testing
+
+```{r}
+set.seed(1234) 
+inTrain <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+training <- training[inTrain, ]
+testing <- training[-inTrain, ]
+dim(training)
+dim(testing)
+```
+
+## Removing variables with near zero variances from both training and testing data sets
+
+```{r}
+Near_Zero_Var <- nearZeroVar(training)
+training <- training[, -Near_Zero_Var]
+testing  <- testing[, -Near_Zero_Var]
+dim(training)
+dim(testing)
+```
+
+## Mapping the correlation of variables in training dataset using corrplot function where we use RcolorBrewer package for color pallete and hierarchical clustering is used to order the variables
+
+```{r}
+corr_training <- cor(training[, -53])
+corrplot(corr_training, order = "hclust", method = "color", type = "upper", 
+        col =  brewer.pal(n=10, name="RdBu"), tl.cex = 0.6 )
+```
+
+## Finding variables with correlation above 80%
+
+```{r}
+highcorrelation = findCorrelation(corr_training, cutoff=0.8)
+names(training)[highcorrelation]
+```
+
+
+
+## Using a Decision tree model to predict "classe" variable in the testing data set with 5-fold cross validation
+
+```{r}
+set.seed(78910)
+decisionTreeModel <- train(classe ~ ., data=training, method="rpart", trControl = trainControl(method = "cv", number = 5))
+fancyRpartPlot(decisionTreeModel$finalModel)
+predictTreeModel <- predict(decisionTreeModel, testing)
+confusionmatrixtree <- confusionMatrix(predictTreeModel, testing$classe)
+confusionmatrixtree
+```
+
+
+## Using a Random Forest model to predict "classe" variable in the testing data set with 5-fold cross validation
+
+```{r}
+controlRandomForest <- trainControl(method="cv", number=5, verboseIter=FALSE)
+modRandomForest <- train(classe ~ ., data=training, method="rf", trControl=controlRandomForest)
+modRandomForest$finalModel
+predictRandomForest <- predict(modRandomForest, newdata=testing)
+confusionmatrixRandomForest <- confusionMatrix(predictRandomForest, testing$classe)
+confusionmatrixRandomForest
+plot(modRandomForest)
+```
+
+
+## Using a Gradient Boosted model to predict "classe" variable in the testing data set
+
+```{r}
+set.seed(78910)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+modGBM  <- train(classe ~ ., data=training, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+print(modGBM)
+predictGBM <- predict(modGBM, newdata=testing)
+confusionmatrixGBM <- confusionMatrix(predictGBM, testing$classe)
+confusionmatrixGBM
+```
+
+# Conclusion
+
+We see that Random Forest has the best accuracy among the models we used for performing predictions with out-of-sample error of 0% whereas out-of-sample error for Gradient Boosted model is 3.1%. Hence, we use Random Forest for predicting "classe" variable in the validation data set. The results obtained are also used to answer questions in the Course Project Prediction Quiz.
+
+## Using Random Forest model to predict "classe" variable in the validation data set as it has the best accuracy
+
+```{r}
+Results <- predict(modRandomForest, newdata=validation)
+Results
+```
